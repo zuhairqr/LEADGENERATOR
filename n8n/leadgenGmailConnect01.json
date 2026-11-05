@@ -1,0 +1,167 @@
+{
+  "id": "leadgenGmailConnect01",
+  "name": "Lead Generator - Gmail account verification",
+  "active": false,
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Private request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leadgen-gmail-profile",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "leadgen-gmail-profile",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "leadgenLocalImport4c5c3a6d",
+          "name": "Lead Generator local import"
+        }
+      }
+    },
+    {
+      "id": "Read own account",
+      "name": "Read own account",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        250,
+        260
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "alQqrfGPb1PecK3j",
+          "name": "Gmail account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Check reply-read permission",
+      "name": "Check reply-read permission",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        260
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=1&q=rfc822msgid%3Aleadgenerator-permission-probe%40invalid.invalid&fields=resultSizeEstimate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "alQqrfGPb1PecK3j",
+          "name": "Gmail account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Safe account result",
+      "name": "Safe account result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        260
+      ],
+      "parameters": {
+        "jsCode": "const gmailAccountResult=function gmailAccountResult(profile, read) {\n  if (typeof profile?.emailAddress === 'string' && Number.isFinite(read?.resultSizeEstimate)) {\n    return {ok:true,emailAddress:profile.emailAddress,read_access:true};\n  }\n  const failure = JSON.stringify([profile?.error, read?.error]).toLowerCase();\n  const code = /service_disabled|accessnotconfigured|api has not been used|api.*disabled/.test(failure)\n    ? 'GMAIL_API_DISABLED'\n    : /invalid_grant|invalid_token|expired|revoked|unauthenticated/.test(failure)\n      ? 'GMAIL_REAUTHORIZE_REQUIRED'\n      : /insufficient.*(?:scope|permission)|access_token_scope_insufficient/.test(failure)\n        ? 'GMAIL_READ_SCOPE_REQUIRED'\n        : /quota|rate.limit|resource_exhausted/.test(failure)\n          ? 'GMAIL_RATE_LIMITED'\n          : 'GMAIL_AUTHORIZATION_OR_READ_SCOPE_REQUIRED';\n  return {ok:false,error_code:code};\n};return [{json:gmailAccountResult($('Read own account').first().json,$input.first().json)}];"
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Return safe result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        900,
+        260
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Private request": {
+      "main": [
+        [
+          {
+            "node": "Read own account",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read own account": {
+      "main": [
+        [
+          {
+            "node": "Check reply-read permission",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check reply-read permission": {
+      "main": [
+        [
+          {
+            "node": "Safe account result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safe account result": {
+      "main": [
+        [
+          {
+            "node": "Return safe result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "executionTimeout": 180,
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "tags": []
+}

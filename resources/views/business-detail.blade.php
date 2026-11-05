@@ -1,0 +1,22 @@
+<section class="panel" id="lead-business"><div class="section-heading"><h2>Website and country</h2><span class="tag">PROSPECT — INTEREST NOT CONFIRMED</span></div>
+@if($lead->business?->discovery_evidence)
+@php($discovery=$lead->business->discovery_evidence)
+<h3>Discovery evidence</h3><p>Search relevance: {{ $discovery['score']??'—' }}/100 · {{ !empty($discovery['buyer_request'])?'Unverified request found in the search snippet':'Buyer interest not established' }}</p><p class="muted small">{{ implode(' · ',array_map(fn($s)=>ucfirst(strtolower(str_replace('_',' ',$s))),$discovery['signals']??[])) }} {{ isset($discovery['reason'])?str_replace('_',' ',$discovery['reason']):'' }}</p>
+@endif
+@if($lead->business)
+@if($canEdit)<form method="post" action="{{ route('business.update',$lead) }}" class="stack">@csrf @method('PUT')<label>Business name<input name="name" value="{{ $lead->business->name }}" maxlength="200" required></label><label>Website<input name="website" value="{{ $lead->business->website }}" type="url" maxlength="2048"></label><div class="columns"><label>Niche<input name="niche" value="{{ $lead->business->niche }}" maxlength="120"></label><label>Location<input name="location" value="{{ $lead->business->location }}" maxlength="200"></label></div><label>Phone<input name="phone" value="{{ $lead->business->phone }}" maxlength="80"></label><button class="secondary">Save business details — re-audit before offering</button></form>@endif
+<hr><h3>Country review — excluded countries: {{ implode(', ',app(\App\Services\CountryPolicy::class)->excluded()) }}</h3><p class="muted">{{ $lead->business->country_code ?? 'Unknown' }} · {{ $lead->business->geo_status }} · {{ $lead->business->country_evidence }}</p>@if($canEdit)<form method="post" action="{{ route('business.country',$lead) }}" class="stack">@csrf<label>Confirmed country (ISO code)<input name="country" maxlength="80" value="{{ $lead->business->country_code }}" placeholder="US / GB / CA / AE" required></label><label>Evidence / source URL<textarea name="country_evidence" maxlength="2000" required></textarea></label><label class="check"><input type="checkbox" name="country_verified" value="1" required><span>I checked the business location against the source. This is factual country confirmation, not an outreach approval.</span></label><button class="secondary">Save country review</button></form>@endif<p><a href="#lead-contact">See public contact details →</a></p>@endif
+<hr>
+<h3 id="lead-audit">Website and contact check</h3>
+@if($canEdit && $lead->business?->website)
+    <form method="post" action="{{ route('business.audit',$lead) }}">@csrf<button>Check website for public contacts</button></form>
+@elseif($canEdit)
+    <p class="muted">Save the business website to run a check.</p>
+@endif
+@if(session('audit_error'))<p class="error" role="alert">{{ session('audit_error') }}</p>@endif<p class="small muted">Static HTML checks with source URL, timestamp and content hash. No JavaScript rendering, Lighthouse measurement, rankings or security exploitation.</p>
+@foreach($lead->audits()->latest()->limit(5)->get() as $audit)<article><h3>Audit #{{ $audit->id }} · {{ $audit->status }} @if($audit->score!==null)· HTML checklist {{ $audit->score }}/100 @endif</h3><p class="small muted">{{ $audit->created_at->timezone('Asia/Karachi')->format('d M Y H:i') }} PKT · {{ $audit->final_url ?? $audit->requested_url }} · HTTP {{ $audit->http_status ?? 'unknown' }} · Fetch {{ $audit->elapsed_ms ?? '?' }} ms (not browser performance)</p>@if($audit->error_code)<p class="error">{{ $audit->error_code }}</p>@endif
+@foreach($audit->findings ?? [] as $finding)<p><span class="tag">{{ $finding['severity'] }}</span> {{ $finding['observation'] }} <span class="muted">Possible service: {{ $finding['possible_service'] }}</span></p>@endforeach
+@if($audit->status==='completed' && !$audit->findings)<p class="muted">No issues detected by these static checks. This does not establish that the website has no issues.</p>@endif
+@if($audit->evidence)<details><summary>Recorded evidence</summary><pre class="prewrap small">{{ json_encode($audit->evidence,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) }}</pre></details>@endif<hr></article>@endforeach
+<h3>Source provenance</h3>@forelse($lead->provenances as $provenance)<p class="small"><a href="{{ $provenance->url }}" target="_blank" rel="noopener noreferrer">{{ $provenance->source }}</a> · {{ $provenance->attribution }}</p>@empty<p class="muted">Original listing source remains on the lead.</p>@endforelse
+</section>

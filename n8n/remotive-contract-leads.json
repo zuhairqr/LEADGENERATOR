@@ -1,0 +1,224 @@
+{
+  "name": "Lead Generator - Remotive contracts (REVIEW BEFORE ACTIVATION)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "manual",
+      "name": "Manual test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        120
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "schedule",
+      "name": "Every 6 hours - inactive until published",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        320
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "permission",
+      "name": "Permission gate - review first",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        220
+      ],
+      "parameters": {
+        "jsCode": "// Set true ONLY after checking current Remotive terms for your use.\n// Also set LEAD_REMOTIVE_APPROVED=true on Laravel after review.\nconst sourceApproved = false;\nif (!sourceApproved) throw new Error('Paused: Remotive access and data-use terms have not been reviewed.');\nreturn [{json: {approved: true}}];"
+      }
+    },
+    {
+      "id": "fetch",
+      "name": "Fetch official software jobs API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        220
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://remotive.com/api/remote-jobs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "category",
+              "value": "software-dev"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "normalize",
+      "name": "Relevant recent contract leads only",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        220
+      ],
+      "parameters": {
+        "jsCode": "const normalizeRemotive = function normalizeRemotive(payload, options = {}) {\n  if (!payload || !Array.isArray(payload.jobs)) throw new Error('Unexpected Remotive API response: jobs array missing');\n  const now = options.now ?? Date.now();\n  const maxItems = Math.min(30, Math.max(1, options.maxItems ?? 30));\n  const maxAgeDays = options.maxAgeDays ?? 30;\n  const clean = (value) => String(value ?? '')\n    .replace(/<(script|style)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi, ' ')\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/&(?:nbsp|amp|lt|gt|quot|apos|#39);/gi, (entity) => ({\n      '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '\"', '&apos;': \"'\", '&#39;': \"'\",\n    }[entity.toLowerCase()] ?? entity))\n    .replace(/\\s+/g, ' ').trim();\n  const terms = /\\b(?:laravel|livewire|filament|website|wordpress|shopify|ecommerce|e-commerce|web development|landing page|n8n|workflow automation|ai automation|zapier|make\\.com|ai integration|openai|chatbot|llm|rag|gpt|payment gateway|merchant integration|stripe|paypal|checkout|payment integration)\\b/i;\n  const seenIds = new Set();\n  const seenUrls = new Set();\n  const leads = [];\n  for (const job of payload.jobs) {\n    if (!job || typeof job !== 'object') continue;\n    const sourceId = String(job.id ?? '');\n    if (!/^[a-zA-Z0-9_-]{1,190}$/.test(sourceId)) continue;\n    const title = clean(job.title);\n    const description = clean(job.description);\n    if (!title || !description || !terms.test(title + ' ' + description)) continue;\n    const type = String(job.job_type ?? '').toLowerCase().trim();\n    // Do not mistake permanent/full-time employment for client-project leads.\n    // Unknown types need an explicit contract/freelance indication in the TITLE.\n    const isContract = ['contract', 'freelance'].includes(type)\n      || (type === '' && /\\b(?:contract|freelance|freelancer)\\b/i.test(title));\n    if (!isContract) continue;\n    let url;\n    try { url = new URL(job.url); } catch { continue; }\n    if (url.protocol !== 'https:' || url.hostname !== 'remotive.com' || url.username || url.password || url.port) continue;\n    url.hash = '';\n    if (url.href.length > 2048) continue;\n    const rawDate = typeof job.publication_date === 'string' ? job.publication_date : '';\n    // Source timestamps without a zone are interpreted as UTC, not server-local time.\n    if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})?$/.test(rawDate)) continue;\n    const date = new Date(/(?:Z|[+-]\\d{2}:\\d{2})$/.test(rawDate) ? rawDate : rawDate + 'Z');\n    if (!Number.isFinite(date.getTime()) || date.getTime() > now || date.getTime() < now - maxAgeDays * 86400000) continue;\n    if (seenIds.has(sourceId) || seenUrls.has(url.href)) continue;\n    seenIds.add(sourceId); seenUrls.add(url.href);\n    const context = [\n      'Source: Remotive. Original listing: ' + url.href,\n      'Type: ' + (type || 'contract/freelance inferred from title; verify manually'),\n      'Company: ' + clean(job.company_name).slice(0, 255),\n      'Location eligibility: ' + (clean(job.candidate_required_location).slice(0, 400) || 'Not provided; verify'),\n      'Salary text (not a project budget): ' + (clean(job.salary).slice(0, 400) || 'Not provided'),\n      'This is a job-board opportunity, not a confirmed buyer inquiry. Check application rules.',\n    ].join('\\n');\n    leads.push({\n      source: 'remotive', source_id: sourceId, url: url.href, title: title.slice(0, 255),\n      description: (context + '\\n\\n' + description).slice(0, 15000),\n      published_at: date.toISOString(),\n    });\n  }\n  return leads.sort((a, b) => b.published_at.localeCompare(a.published_at)).slice(0, maxItems);\n};\nreturn normalizeRemotive($input.first().json).map(json => ({json}));"
+      }
+    },
+    {
+      "id": "import",
+      "name": "Import into Laravel - set URL and credential",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        220
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://leads.your-domain.example/api/leads/import",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "notes",
+      "name": "Required setup and limitations",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        250,
+        -260
+      ],
+      "parameters": {
+        "width": 900,
+        "height": 340,
+        "content": "## Paused connector — no real leads fetched yet\n1. Verify current Remotive API terms, rate limits, attribution and private-dashboard/AI-processing permissions. This is NOT permission to scrape other websites.\n2. Change permission gate to true only after review. Enable matching Laravel source config.\n3. Set Laravel HTTPS import URL and HTTP Header Auth credential: Authorization = Bearer <private token>.\n4. Manual test first; check this workflow against your installed n8n version before publishing.\n5. Candidate cadence: every six hours, one feed request per run, no aggressive retries. Adjust to current provider rules.\n6. Filters: recent 30 days, explicit contract/freelance, relevant skills, max 30 newest per run. Not exhaustive: no pagination/cursor; new busy feeds may need a revised strategy.\n7. Keep Remotive attribution and original links. No auto-contact and no AI calls on import.\n8. Add redacted error alerts before production. Saving execution payloads is disabled for privacy."
+      }
+    }
+  ],
+  "connections": {
+    "Manual test": {
+      "main": [
+        [
+          {
+            "node": "Permission gate - review first",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 6 hours - inactive until published": {
+      "main": [
+        [
+          {
+            "node": "Permission gate - review first",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Permission gate - review first": {
+      "main": [
+        [
+          {
+            "node": "Fetch official software jobs API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch official software jobs API": {
+      "main": [
+        [
+          {
+            "node": "Relevant recent contract leads only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relevant recent contract leads only": {
+      "main": [
+        [
+          {
+            "node": "Import into Laravel - set URL and credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "executionTimeout": 180,
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "tags": []
+}

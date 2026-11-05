@@ -1,0 +1,15 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path');
+const {gmailAccountResult}=require('../../n8n/adapters/gmail-health.cjs');
+const root=path.resolve(__dirname,'../..');
+const file=path.join(root,'n8n/leadgenGmailConnect01.json');
+const original=fs.readFileSync(file,'utf8');
+const workflow=JSON.parse(original);
+if(workflow.id!=='leadgenGmailConnect01') throw Error('Unexpected workflow');
+const result=workflow.nodes.find(n=>n.name==='Safe account result');
+if(!result || result.type!=='n8n-nodes-base.code') throw Error('Expected result node absent');
+const backup=path.join(root,'storage/n8n/logs/gmail-profile-before-diagnostic.json');
+if(!fs.existsSync(backup)) fs.writeFileSync(backup,original,{mode:0o600});
+result.parameters.jsCode='const gmailAccountResult='+gmailAccountResult.toString()+";return [{json:gmailAccountResult($('Read own account').first().json,$input.first().json)}];";
+fs.writeFileSync(file,JSON.stringify(workflow,null,2)+'\n');
+console.log('Prepared fixed-code Gmail diagnostics for account verification only.');

@@ -1,0 +1,179 @@
+{
+  "name": "leadgenerator-sandbox",
+  "services": {
+    "tls-init": {
+      "image": "n8nio/n8n-sandbox-service-api:1.12.0",
+      "user": "0:0",
+      "entrypoint": [
+        "sh",
+        "-c"
+      ],
+      "command": [
+        "bootstrap-mtls.sh --out-dir /tls --runners 1 --api-san sandbox-api --control-san-prefix sandbox-runner && cp -a /tls/api/. /api-tls/ && cp -a /tls/runner/. /runner-tls/ && chown -R sandbox-api:sandbox-api /api-tls && chmod 755 /api-tls /runner-tls"
+      ],
+      "volumes": [
+        "certificate-authority:/tls",
+        "api-tls:/api-tls",
+        "runner-tls:/runner-tls"
+      ],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "sandbox-api": {
+      "image": "n8nio/n8n-sandbox-service-api:1.12.0",
+      "restart": "unless-stopped",
+      "depends_on": {
+        "tls-init": {
+          "condition": "service_completed_successfully"
+        }
+      },
+      "ports": [
+        "127.0.0.1:8081:8080"
+      ],
+      "environment": {
+        "SANDBOX_API_KEYS": "${SANDBOX_API_KEYS:?Missing key}",
+        "SANDBOX_API_RUNNER_REGISTRATION_TOKEN": "${SANDBOX_API_RUNNER_REGISTRATION_TOKEN:?Missing registration token}",
+        "SANDBOX_API_RUNNER_API_KEY": "${SANDBOX_API_RUNNER_API_KEY:?Missing runner key}",
+        "SANDBOX_API_GRPC_TLS_CERT_FILE": "/tls/grpc-server.crt",
+        "SANDBOX_API_GRPC_TLS_KEY_FILE": "/tls/grpc-server.key",
+        "SANDBOX_API_GRPC_TLS_CLIENT_CA_FILE": "/tls/ca.crt",
+        "SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CA_FILE": "/tls/ca.crt",
+        "SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CERT_FILE": "/tls/control-grpc-api-client.crt",
+        "SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_KEY_FILE": "/tls/control-grpc-api-client.key"
+      },
+      "volumes": [
+        "api-tls:/tls:ro",
+        "api-data:/var/lib/n8n-sandbox-api"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://localhost:8080/healthz"
+        ],
+        "interval": "5s",
+        "timeout": "3s",
+        "retries": 30
+      },
+      "mem_limit": "512m",
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "sandbox-runner-1": {
+      "image": "n8nio/n8n-sandbox-service-runner-dind:1.12.0",
+      "privileged": true,
+      "restart": "unless-stopped",
+      "stop_grace_period": "90s",
+      "depends_on": {
+        "sandbox-api": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "SANDBOX_RUNNER_API_KEYS": "${SANDBOX_API_RUNNER_API_KEY:?Missing runner key}",
+        "SANDBOX_RUNNER_REGISTRATION_TOKEN": "${SANDBOX_API_RUNNER_REGISTRATION_TOKEN:?Missing token}",
+        "SANDBOX_RUNNER_API_GRPC_ADDR": "sandbox-api:9090",
+        "SANDBOX_RUNNER_HTTP_BASE_URL": "https://sandbox-runner-1:8080",
+        "SANDBOX_RUNNER_CONTROL_GRPC_LISTEN_ADDR": ":9091",
+        "SANDBOX_RUNNER_CONTROL_GRPC_ADVERTISE_ADDR": "sandbox-runner-1:9091",
+        "SANDBOX_RUNNER_ID": "runner-1",
+        "SANDBOX_RUNNER_CAPACITY_TOTAL": "2",
+        "SANDBOX_RUNNER_DOCKER_SANDBOX_IMAGE": "n8nio/n8n-sandbox-service-sandbox:1.12.0",
+        "SANDBOX_RUNNER_REGISTRATION_GRPC_CA_FILE": "/tls/ca.crt",
+        "SANDBOX_RUNNER_REGISTRATION_GRPC_CERT_FILE": "/tls/grpc-client.crt",
+        "SANDBOX_RUNNER_REGISTRATION_GRPC_KEY_FILE": "/tls/grpc-client.key",
+        "SANDBOX_RUNNER_REGISTRATION_GRPC_SERVER_NAME": "sandbox-api",
+        "SANDBOX_RUNNER_CONTROL_GRPC_TLS_CERT_FILE": "/tls/control-grpc-server.crt",
+        "SANDBOX_RUNNER_CONTROL_GRPC_TLS_KEY_FILE": "/tls/control-grpc-server.key",
+        "SANDBOX_RUNNER_CONTROL_GRPC_TLS_CLIENT_CA_FILE": "/tls/ca.crt"
+      },
+      "volumes": [
+        "runner-tls:/tls:ro",
+        "runner-docker:/var/lib/docker"
+      ],
+      "mem_limit": "2g",
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "n8n": {
+      "image": "docker.n8n.io/n8nio/n8n:2.45.4",
+      "restart": "unless-stopped",
+      "depends_on": {
+        "sandbox-api": {
+          "condition": "service_healthy"
+        }
+      },
+      "ports": [
+        "127.0.0.1:5679:5678"
+      ],
+      "environment": {
+        "DB_TYPE": "sqlite",
+        "N8N_HOST": "localhost",
+        "N8N_PORT": "5678",
+        "N8N_PROTOCOL": "http",
+        "N8N_LISTEN_ADDRESS": "0.0.0.0",
+        "N8N_EDITOR_BASE_URL": "http://localhost:5679/",
+        "N8N_WEBHOOK_URL": "http://localhost:5679/",
+        "N8N_SECURE_COOKIE": "false",
+        "N8N_DIAGNOSTICS_ENABLED": "false",
+        "N8N_PERSONALIZATION_ENABLED": "false",
+        "NODE_FUNCTION_ALLOW_BUILTIN": "url",
+        "GENERIC_TIMEZONE": "Asia/Karachi",
+        "TZ": "Asia/Karachi",
+        "EXECUTIONS_DATA_PRUNE": "true",
+        "EXECUTIONS_DATA_MAX_AGE": "168",
+        "N8N_INSTANCE_AI_SANDBOX_ENABLED": "true",
+        "N8N_INSTANCE_AI_SANDBOX_PROVIDER": "n8n-sandbox",
+        "N8N_SANDBOX_SERVICE_URL": "http://sandbox-api:8080",
+        "N8N_SANDBOX_SERVICE_API_KEY": "${SANDBOX_API_KEYS:?Missing sandbox key}"
+      },
+      "volumes": [
+        "../../storage/n8n/data/.n8n:/home/node/.n8n"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:5678/healthz/readiness').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 18,
+        "start_period": "30s"
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    }
+  },
+  "volumes": {
+    "certificate-authority": {},
+    "api-tls": {},
+    "runner-tls": {},
+    "api-data": {},
+    "runner-docker": {}
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "name": "Lead Generator - reviewed source import TEMPLATE",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-start",
+      "name": "Manual test only",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// TEMPLATE DATA ONLY. Replace this node with mapping from a permitted source API.\n// Do not enable scheduled collection until permission, pagination and rate limits are reviewed.\nreturn [{ json: { source: 'approved-board', source_id: 'example-001', url: 'https://jobs.example.org/projects/example-001', title: 'Laravel website with Stripe and AI chatbot', description: 'Illustrative project only, not a real lead. Build a Laravel website, integrate Stripe checkout and an AI chatbot.', budget_min: 1000, budget_max: 2500, currency: 'USD' } }];"
+      },
+      "id": "map-lead",
+      "name": "Replace with approved source mapping",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://leads.your-domain.example/api/leads/import",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "Accept", "value": "application/json"}]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {"timeout": 30000}
+      },
+      "id": "import-lead",
+      "name": "Import to Laravel - configure credential",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 240],
+      "onError": "stopWorkflow"
+    },
+    {
+      "parameters": {
+        "content": "## Setup required — not a live crawler\n1. Deploy Laravel and configure a strong import token.\n2. Set an HTTP Header Auth credential: Authorization = Bearer YOUR_TOKEN. Select it on the HTTP node. Never paste credentials into this JSON.\n3. Replace example URL and mapping with your reviewed source.\n4. Approve the source slug + exact listing hosts in config/leadgen.php.\n5. Respect provider terms, pagination, data retention and rate limits.\n6. Manual test first. 201 = created, 200 duplicate = already present. Errors stop execution.\nAdd an error workflow, batching, backoff and monitoring before scheduling. Keep execution-data retention minimal.",
+        "height": 380,
+        "width": 660
+      },
+      "id": "instructions",
+      "name": "Read before activation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [320, -220]
+    }
+  ],
+  "connections": {
+    "Manual test only": {"main": [[{"node": "Replace with approved source mapping", "type": "main", "index": 0}]]},
+    "Replace with approved source mapping": {"main": [[{"node": "Import to Laravel - configure credential", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1", "saveDataErrorExecution": "none", "saveDataSuccessExecution": "none", "saveManualExecutions": false},
+  "pinData": {},
+  "tags": []
+}

@@ -1,0 +1,268 @@
+{
+  "id": "leadgenSalesGmail01",
+  "name": "Lead Generator - Approved Gmail transport",
+  "active": false,
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Private request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leadgen-gmail-send",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "leadgen-gmail-send",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "leadgenLocalImport4c5c3a6d",
+          "name": "Lead Generator local import"
+        }
+      }
+    },
+    {
+      "id": "Claim approved server envelope",
+      "name": "Claim approved server envelope",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        100,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.23.16.1:8084/api/sales/gmail-envelope",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {message_id:$json.body.messageId} }}",
+        "options": {
+          "timeout": 150000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "leadgenLocalImport4c5c3a6d",
+          "name": "Lead Generator local import"
+        }
+      }
+    },
+    {
+      "id": "Verify own Gmail sender",
+      "name": "Verify own Gmail sender",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        260
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "alQqrfGPb1PecK3j",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "id": "Build exact approved MIME",
+      "name": "Build exact approved MIME",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        260
+      ],
+      "parameters": {
+        "jsCode": "const buildApprovedMime=function buildApprovedMime(b,profile) {\n if(String(profile.emailAddress).toLowerCase()!==String(b.fromEmail).toLowerCase()) throw Error('Sender does not match connected Gmail account');\n if(!/^[0-9a-f-]{36}$/.test(b.messageId)||/[\\r\\n]/.test(b.recipient+b.subject+b.fromEmail+(b.fromName||''))||!b.recipient||!b.subject||!b.body)throw Error('Invalid approved message');\n const rfc=b.messageId+'@'+b.fromEmail.split('@')[1];\n const from=b.fromName?'=?UTF-8?B?'+Buffer.from(b.fromName).toString('base64')+'?= <'+b.fromEmail+'>':b.fromEmail;\n const headers=['From: '+from,'To: '+b.recipient,'Subject: =?UTF-8?B?'+Buffer.from(b.subject).toString('base64')+'?=','Message-ID: <'+rfc+'>','MIME-Version: 1.0','Content-Type: text/plain; charset=UTF-8','Content-Transfer-Encoding: base64'];\n if(b.parentMessageId && !/[\\r\\n]/.test(b.parentMessageId))headers.push('In-Reply-To: <'+b.parentMessageId.replace(/[<>]/g,'')+'>','References: <'+b.parentMessageId.replace(/[<>]/g,'')+'>');\n const text=Buffer.from(b.body).toString('base64').match(/.{1,76}/g).join('\\r\\n');\n return {raw:Buffer.from(headers.join('\\r\\n')+'\\r\\n\\r\\n'+text).toString('base64url'),rfc};\n}; return [{json:buildApprovedMime($(\"Claim approved server envelope\").first().json,$json)}];"
+      }
+    },
+    {
+      "id": "Send approved email",
+      "name": "Send approved email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {raw:$json.raw} }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "alQqrfGPb1PecK3j",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "id": "Read sent Message-ID",
+      "name": "Read sent Message-ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        260
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://gmail.googleapis.com/gmail/v1/users/me/messages/'+encodeURIComponent($json.id)+'?format=metadata&metadataHeaders=Message-ID&fields=id,payload(headers)' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "alQqrfGPb1PecK3j",
+          "name": "Gmail account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Gmail receipt",
+      "name": "Gmail receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        260
+      ],
+      "parameters": {
+        "jsCode": "const gmailDeliveryReceipt=function gmailDeliveryReceipt(sent, metadata) {\n if (typeof sent?.id !== 'string' || !sent.id) throw Error('Gmail result missing');\n const headers = metadata?.id === sent.id && Array.isArray(metadata?.payload?.headers) ? metadata.payload.headers : [];\n const header = headers.find(h => h.name?.toLowerCase() === 'message-id')?.value;\n const messageId = typeof header === 'string' ? header.trim().match(/^<([^<>\\s@]+@[^<>\\s@]+)>$/)?.[1] : null;\n return {ok:true, message_id:messageId || null, thread_id:sent.threadId || null};\n}; return [{json:gmailDeliveryReceipt($('Send approved email').first().json,$input.first().json)}];"
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Return safe result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1200,
+        260
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Private request": {
+      "main": [
+        [
+          {
+            "node": "Claim approved server envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim approved server envelope": {
+      "main": [
+        [
+          {
+            "node": "Verify own Gmail sender",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify own Gmail sender": {
+      "main": [
+        [
+          {
+            "node": "Build exact approved MIME",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build exact approved MIME": {
+      "main": [
+        [
+          {
+            "node": "Send approved email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send approved email": {
+      "main": [
+        [
+          {
+            "node": "Read sent Message-ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read sent Message-ID": {
+      "main": [
+        [
+          {
+            "node": "Gmail receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail receipt": {
+      "main": [
+        [
+          {
+            "node": "Return safe result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "executionTimeout": 180,
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "tags": []
+}

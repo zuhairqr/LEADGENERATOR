@@ -12,3 +12,5 @@
 /storage/local-mysql-admin.cnf
 /storage/local-runtime/
 /storage/n8n/
+/deployment/upwork-scraper/
+**/node_modules/

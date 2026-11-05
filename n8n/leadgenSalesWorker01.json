@@ -1,0 +1,115 @@
+{
+  "id": "leadgenSalesWorker01",
+  "name": "Lead Generator - Approved outbox and follow-up drafts",
+  "active": false,
+  "nodes": [
+    {
+      "id": "timer",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "manual",
+      "name": "Process approved queue now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "Process approved messages and due drafts",
+      "name": "Process approved messages and due drafts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.23.16.1:8083/api/sales/tick",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}",
+        "options": {
+          "timeout": 150000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "leadgenLocalImport4c5c3a6d",
+          "name": "Lead Generator local import"
+        }
+      }
+    },
+    {
+      "id": "notice",
+      "name": "Approval and budget rules",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "content": "## Approval is required for every email\nLaravel rechecks the exact approved message, recipient, sender and lead outcome. Edited drafts lose approval. Unknown delivery is never retried automatically. Follow-ups are drafts and need fresh approval. AI calls require verified profile facts, consent, auto-draft enabled and a rolling 24-hour budget. Only one AI draft is attempted per tick. Local services must remain running.",
+        "width": 800,
+        "height": 260
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Process approved messages and due drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process approved queue now": {
+      "main": [
+        [
+          {
+            "node": "Process approved messages and due drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "executionTimeout": 180,
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "tags": []
+}

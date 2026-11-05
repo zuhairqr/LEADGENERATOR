@@ -1,0 +1,32 @@
+# Copy into a private .env on your server. Never share credentials in chat.
+APP_NAME="Lead Generator"
+APP_ENV=production
+APP_KEY=
+APP_DEBUG=false
+APP_URL=https://leads.your-domain.example
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=cpaneluser_leads
+DB_USERNAME=cpaneluser_leads
+DB_PASSWORD=
+SESSION_SECURE_COOKIE=true
+LEAD_ADMIN_EMAIL=
+# password_hash() bcrypt/Argon hash, not plaintext. Keep single quotes.
+LEAD_ADMIN_PASSWORD_HASH=''
+# Generate a random token with at least 32 bytes of entropy.
+LEAD_IMPORT_TOKEN=
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+LEAD_VERIFIED_PORTFOLIO=''
+# Keep false until current Remotive API/data-use terms have been reviewed.
+LEAD_REMOTIVE_APPROVED=false
+
+# Public-source collection: enable only after source review and approval.
+LEAD_REMOTEOK_APPROVED=false
+LEAD_ARBEITNOW_APPROVED=false
+LEAD_JOBICY_APPROVED=false
+LEAD_WWR_APPROVED=false
+LEAD_HIMALAYAS_APPROVED=false
+LEAD_FACEBOOK_PUBLIC_APPROVED=false
+LEAD_INSTAGRAM_PUBLIC_APPROVED=false
+LEAD_PUBLIC_WEB_APPROVED=false

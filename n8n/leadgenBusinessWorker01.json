@@ -1,0 +1,100 @@
+{
+  "id": "leadgenBusinessWorker01",
+  "name": "Lead Generator - Business search and website audits",
+  "active": false,
+  "nodes": [
+    {
+      "id": "timer",
+      "name": "Every 5 minutes — bounded discovery",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "manual",
+      "name": "Discover and audit now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "Public business discovery and audit",
+      "name": "Public business discovery and audit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.23.16.1:8083/api/collection/business-tick",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}",
+        "options": {
+          "timeout": 150000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "leadgenLocalImport4c5c3a6d",
+          "name": "Lead Generator local import"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 minutes — bounded discovery": {
+      "main": [
+        [
+          {
+            "node": "Public business discovery and audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discover and audit now": {
+      "main": [
+        [
+          {
+            "node": "Public business discovery and audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "executionTimeout": 180,
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "tags": []
+}

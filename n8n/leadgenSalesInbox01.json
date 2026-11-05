@@ -1,0 +1,78 @@
+{
+  "id": "leadgenSalesInbox01",
+  "name": "Lead Generator - Match own inbox replies",
+  "active": false,
+  "nodes": [
+    {
+      "id": "inbox",
+      "name": "Every 5 minutes — tracked clients only",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Sync only known client conversations",
+      "name": "Sync only known client conversations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.23.16.1:8083/api/sales/inbox-sync",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}",
+        "options": {
+          "timeout": 150000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "leadgenLocalImport4c5c3a6d",
+          "name": "Lead Generator local import"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 minutes — tracked clients only": {
+      "main": [
+        [
+          {
+            "node": "Sync only known client conversations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "executionTimeout": 180,
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "tags": []
+}

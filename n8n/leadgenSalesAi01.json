@@ -1,0 +1,147 @@
+{
+  "id": "leadgenSalesAi01",
+  "name": "Lead Generator - Private AI drafting",
+  "active": false,
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Private request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leadgen-ai-draft",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "leadgen-ai-draft",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "leadgenLocalImport4c5c3a6d",
+          "name": "Lead Generator local import"
+        }
+      }
+    },
+    {
+      "id": "openai",
+      "name": "Saved AI connection",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        300,
+        260
+      ],
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.body.model }}"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "={{ $json.body.system }}"
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.body.prompt }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "jsonOutput": true,
+        "options": {
+          "maxTokens": 2200
+        }
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "UrRBcmMIyw4ZO3ik",
+          "name": "OpenAI account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Validate AI response",
+      "name": "Validate AI response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        260
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json; try { const c=r.choices?.[0]; const result=typeof c?.message?.content==='string'?JSON.parse(c.message.content):c?.message?.content; if(c?.finish_reason!=='stop'||!result||typeof result!=='object')throw Error(); return [{json:{ok:true,result}}]; } catch {return [{json:{ok:false,error_code:'AI_PROVIDER_ERROR'}}];}"
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Return safe result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        900,
+        260
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Private request": {
+      "main": [
+        [
+          {
+            "node": "Saved AI connection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saved AI connection": {
+      "main": [
+        [
+          {
+            "node": "Validate AI response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate AI response": {
+      "main": [
+        [
+          {
+            "node": "Return safe result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "executionTimeout": 180,
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "tags": []
+}

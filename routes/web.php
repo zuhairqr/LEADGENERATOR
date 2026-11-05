@@ -1,0 +1,94 @@
+<?php
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ConnectionSettingsController;
+use App\Http\Controllers\OperatorSetupController;
+use App\Http\Controllers\AutomationSettingsController;
+use App\Http\Controllers\OutreachController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\ValidationException;
+
+Route::get('/login', fn () => response()->view('login')->header('Cache-Control', 'no-store'))->name('login');
+Route::get('/setup/operator', [OperatorSetupController::class, 'create'])->name('operator.setup');
+Route::post('/setup/operator', [OperatorSetupController::class, 'store'])->middleware('throttle:login')->name('operator.setup.store');
+Route::post('/login', function (Request $request) {
+    $data = $request->validate(['email' => ['required', 'email', 'max:254'], 'password' => ['required', 'string', 'max:512']]);
+    $hash = (string) config('leadgen.admin_password_hash');
+    $email = (string) config('leadgen.admin_email');
+    $isOwner=$email!=='' && hash_equals(strtolower($email),strtolower($data['email']));
+    $team=$isOwner?null:\App\Models\OperatorAccount::where('email',strtolower($data['email']))->where('active',true)->first();
+    if($team)$hash=$team->password_hash;
+    if ($hash === '' || (!$isOwner && !$team) || !password_verify($data['password'], $hash)) {
+        throw ValidationException::withMessages(['email' => 'Login failed. Check credentials or ask the administrator to finish setup.']);
+    }
+    $request->session()->regenerate();
+    $request->session()->forget('team_account_id');if($team)$request->session()->put('team_account_id',$team->id);
+    $request->session()->put('operator', hash('sha256', $hash));
+    return redirect()->route('dashboard');
+})->middleware('throttle:login');
+
+Route::middleware('dashboard.auth')->group(function () {
+    Route::get('/settings/mail-test',[\App\Http\Controllers\MailConnectionTestController::class,'index'])->name('mail-test.index');
+    Route::post('/settings/mail-test',[\App\Http\Controllers\MailConnectionTestController::class,'prepare'])->middleware('throttle:3,1')->name('mail-test.prepare');
+    Route::get('/inbox',[\App\Http\Controllers\InboxController::class,'index'])->name('inbox.index');
+    Route::post('/inbox/verify',[\App\Http\Controllers\InboxController::class,'verify'])->middleware('throttle:3,1')->name('inbox.verify');
+    Route::post('/inbox/connect',[\App\Http\Controllers\InboxController::class,'connect'])->middleware('throttle:3,1')->name('inbox.connect');
+    Route::post('/inbox/sync',[\App\Http\Controllers\InboxController::class,'sync'])->middleware('throttle:6,1')->name('inbox.sync');
+    Route::put('/inbox/{event}',[\App\Http\Controllers\InboxController::class,'classify'])->name('inbox.classify');
+    Route::get('/connectors',[\App\Http\Controllers\ConnectorController::class,'index'])->name('connectors.index');
+    Route::post('/connectors/bedrock/settings',[\App\Http\Controllers\BedrockResearchController::class,'save'])->name('bedrock.settings');
+    Route::post('/connectors/bedrock/research',[\App\Http\Controllers\BedrockResearchController::class,'research'])->middleware('throttle:2,60')->name('bedrock.research');
+    Route::post('/connectors',[\App\Http\Controllers\ConnectorController::class,'save'])->name('connectors.create');
+    Route::put('/connectors/{connector}',[\App\Http\Controllers\ConnectorController::class,'save'])->name('connectors.save');
+    Route::post('/connectors/{connector}/toggle',[\App\Http\Controllers\ConnectorController::class,'toggle'])->name('connectors.toggle');
+    Route::post('/connectors/{connector}/run',[\App\Http\Controllers\ConnectorController::class,'run'])->name('connectors.run');
+    Route::post('/connectors/{connector}/test',[\App\Http\Controllers\ConnectorController::class,'test'])->name('connectors.test');
+    Route::post('/connectors/{connector}/crm',[\App\Http\Controllers\ConnectorController::class,'crm'])->name('connectors.crm');
+    Route::get('/channels',[\App\Http\Controllers\ChannelController::class,'index'])->name('channels.index');
+    Route::post('/channels',[\App\Http\Controllers\ChannelController::class,'create'])->name('channels.create');
+    Route::post('/channels/{message}/approve',[\App\Http\Controllers\ChannelController::class,'approve'])->name('channels.approve');
+    Route::post('/channels/{message}/cancel',[\App\Http\Controllers\ChannelController::class,'cancel'])->name('channels.cancel');
+    Route::put('/channels/{message}',[\App\Http\Controllers\ChannelController::class,'edit'])->name('channels.edit');
+    Route::post('/channels/{message}/resolve',[\App\Http\Controllers\ChannelController::class,'resolve'])->name('channels.resolve');
+    Route::get('/discovery',[\App\Http\Controllers\BusinessController::class,'index'])->name('discovery.index');
+    Route::put('/discovery/settings',[\App\Http\Controllers\BusinessController::class,'settings'])->name('discovery.settings');
+    Route::post('/discovery/search',[\App\Http\Controllers\BusinessController::class,'search'])->middleware('throttle:6,1')->name('discovery.search');
+    Route::post('/discovery/import',[\App\Http\Controllers\BusinessController::class,'import'])->name('discovery.import');
+    Route::post('/discovery/csv',[\App\Http\Controllers\BusinessController::class,'csv'])->name('discovery.csv');
+    Route::get('/discovery/template',[\App\Http\Controllers\BusinessController::class,'template'])->name('discovery.template');
+    Route::put('/leads/{lead}/business',[\App\Http\Controllers\BusinessController::class,'update'])->name('business.update');
+    Route::post('/leads/{lead}/country',[\App\Http\Controllers\BusinessController::class,'country'])->name('business.country');
+    Route::post('/leads/{lead}/audit',[\App\Http\Controllers\BusinessController::class,'audit'])->middleware('throttle:6,1')->name('business.audit');
+    Route::post('/leads/{lead}/notes',[\App\Http\Controllers\CrmController::class,'note'])->name('crm.note');
+    Route::post('/leads/{lead}/tasks',[\App\Http\Controllers\CrmController::class,'task'])->name('crm.task');
+    Route::post('/tasks/{task}/complete',[\App\Http\Controllers\CrmController::class,'complete'])->name('crm.complete');
+    Route::get('/reports',[\App\Http\Controllers\CrmController::class,'reports'])->name('reports');
+    Route::get('/reports/export',[\App\Http\Controllers\CrmController::class,'export'])->name('reports.export');
+    Route::get('/team',[\App\Http\Controllers\TeamController::class,'index'])->name('team.index');
+    Route::post('/team',[\App\Http\Controllers\TeamController::class,'save'])->name('team.create');
+    Route::put('/team/{account}',[\App\Http\Controllers\TeamController::class,'save'])->name('team.save');
+    Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/settings/automation', [AutomationSettingsController::class, 'edit'])->name('automation.edit');
+    Route::put('/settings/automation', [AutomationSettingsController::class, 'update'])->name('automation.update');
+    Route::put('/settings/mail', [AutomationSettingsController::class, 'mail'])->name('automation.mail');
+    Route::post('/settings/mail/test', [AutomationSettingsController::class, 'testMail'])->middleware('throttle:3,1')->name('automation.mail.test');
+    Route::get('/outreach', [OutreachController::class, 'index'])->name('outreach.index');
+    Route::put('/leads/{lead}/contact', [OutreachController::class, 'contact'])->name('outreach.contact');
+    Route::post('/leads/{lead}/generate', [OutreachController::class, 'generate'])->middleware('throttle:ai')->name('outreach.generate');
+    Route::post('/leads/{lead}/outcome', [OutreachController::class, 'outcome'])->name('outreach.outcome');
+    Route::put('/outreach/{message}', [OutreachController::class, 'edit'])->name('outreach.edit');
+    Route::post('/outreach/{message}/approve', [OutreachController::class, 'approve'])->name('outreach.approve');
+    Route::post('/outreach/{message}/cancel', [OutreachController::class, 'cancel'])->name('outreach.cancel');
+    Route::post('/outreach/{message}/resolve', [OutreachController::class, 'resolve'])->name('outreach.resolve');
+    Route::post('/outreach/{message}/followup', [OutreachController::class, 'followup'])->name('outreach.followup');
+    Route::get('/settings/connections', [ConnectionSettingsController::class, 'edit'])->name('connections.edit');
+    Route::put('/settings/connections', [ConnectionSettingsController::class, 'update'])->name('connections.update');
+    Route::get('/leads/{lead}', [DashboardController::class, 'show'])->name('leads.show');
+    Route::patch('/leads/{lead}', [DashboardController::class, 'update'])->name('leads.update');
+    Route::post('/leads/{lead}/draft', [OutreachController::class, 'generate'])->middleware('throttle:ai')->name('leads.draft');
+    Route::post('/logout', function (Request $request) {
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        return redirect()->route('login');
+    })->name('logout');
+});

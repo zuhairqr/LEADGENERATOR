@@ -1,0 +1,324 @@
+{
+  "id": "leadgenGmailRead01",
+  "name": "Lead Generator - Tracked client reply metadata",
+  "active": false,
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Private request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leadgen-gmail-read",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "leadgen-gmail-read",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "leadgenLocalImport4c5c3a6d",
+          "name": "Lead Generator local import"
+        }
+      }
+    },
+    {
+      "id": "Verify reply mailbox",
+      "name": "Verify reply mailbox",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        150,
+        260
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "alQqrfGPb1PecK3j",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "id": "Tracked clients only",
+      "name": "Tracked clients only",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        260
+      ],
+      "parameters": {
+        "jsCode": "const b=$('Private request').first().json.body;if(String($json.emailAddress).toLowerCase()!==String(b.fromEmail).toLowerCase())throw Error('Mailbox mismatch');if(!Array.isArray(b.contacts)||!b.contacts.length||b.contacts.length>20||b.contacts.some(e=>typeof e!=='string'||! /^[a-zA-Z0-9.!#$%&'*+/=?^_`|~-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$/.test(e)))throw Error('Tracked recipients required');const after=Number(b.after);if(!Number.isFinite(after)||after<0)throw Error('Invalid checkpoint');return [{json:{q:'-from:me -in:spam -in:trash after:'+Math.floor(after)+' {'+b.contacts.map(e=>'from:'+e).join(' ')+'}',pageToken:typeof b.pageToken==='string'?b.pageToken:''}}];"
+      }
+    },
+    {
+      "id": "List tracked replies",
+      "name": "List tracked replies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        260
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&q='+encodeURIComponent($json.q)+($json.pageToken?'&pageToken='+encodeURIComponent($json.pageToken):'') }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "alQqrfGPb1PecK3j",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "id": "Expand message IDs",
+      "name": "Expand message IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        260
+      ],
+      "parameters": {
+        "jsCode": "const rows=$json.messages||[];return rows.length?rows.map(m=>({json:m})):[{json:{empty:true}}];"
+      }
+    },
+    {
+      "id": "has-message",
+      "name": "Has replies",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        750,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has",
+              "leftValue": "={{ !$json.empty }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Read reply metadata",
+      "name": "Read reply metadata",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        260
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://gmail.googleapis.com/gmail/v1/users/me/messages/'+encodeURIComponent($json.id)+'?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=In-Reply-To&metadataHeaders=References&metadataHeaders=Auto-Submitted&metadataHeaders=X-Failed-Recipients' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "alQqrfGPb1PecK3j",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "id": "Return matched metadata",
+      "name": "Return matched metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        260
+      ],
+      "parameters": {
+        "jsCode": "const messages=[];for(const item of $input.all()){const v=item.json,h={};for(const x of v.payload?.headers||[])h[x.name.toLowerCase()]=x.value;const sender=(h.from||'').match(/(?:<|^)([^<>\\s]+@[^<>\\s]+)>?/)?.[1]?.toLowerCase();const references=((h['in-reply-to']||'')+' '+(h.references||'')).match(/[^<>\\s]+@[^<>\\s]+/g)||[];if(v.threadId)references.push(v.threadId);if(!sender||!references.length)continue;messages.push({sender,references:[...new Set(references)].slice(0,30),provider_message_id:v.id,subject:h.subject||'',snippet:v.snippet||'',outcome:h['x-failed-recipients']?'bounce':'reply',failed_recipient:h['x-failed-recipients']||null});}return [{json:{ok:true,messages,nextPageToken:$('List tracked replies').first().json.nextPageToken||null}}];"
+      }
+    },
+    {
+      "id": "No matching replies",
+      "name": "No matching replies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        260
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{ok:true,messages:[],nextPageToken:null}}];"
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Return safe result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1250,
+        260
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Private request": {
+      "main": [
+        [
+          {
+            "node": "Verify reply mailbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify reply mailbox": {
+      "main": [
+        [
+          {
+            "node": "Tracked clients only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tracked clients only": {
+      "main": [
+        [
+          {
+            "node": "List tracked replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List tracked replies": {
+      "main": [
+        [
+          {
+            "node": "Expand message IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand message IDs": {
+      "main": [
+        [
+          {
+            "node": "Has replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read reply metadata": {
+      "main": [
+        [
+          {
+            "node": "Return matched metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return matched metadata": {
+      "main": [
+        [
+          {
+            "node": "Return safe result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No matching replies": {
+      "main": [
+        [
+          {
+            "node": "Return safe result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has replies": {
+      "main": [
+        [
+          {
+            "node": "Read reply metadata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No matching replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "executionTimeout": 180,
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "tags": []
+}
