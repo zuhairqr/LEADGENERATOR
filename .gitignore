@@ -1,0 +1,14 @@
+/vendor/
+/.env
+/.env.*
+/storage/**/*.log
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/framework/cache/data/*
+/bootstrap/cache/*.php
+/public/hot
+/storage/local-mysql/
+/storage/local-mysql-backups/
+/storage/local-mysql-admin.cnf
+/storage/local-runtime/
+/storage/n8n/
